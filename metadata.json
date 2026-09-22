@@ -1,0 +1,8 @@
+{
+  "name": "nl.basic Builder",
+  "description": "Multi-format code and media asset generator for Web, PNG/MP4/WAV, C/C++/HPP/Makefile, Shell/Batch (.sh/.bat), C#/.NET/Unity/MonoGame, Python, SmileBASIC, and Retro BASIC.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
