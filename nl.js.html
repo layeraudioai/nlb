@@ -1,0 +1,137 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>nl.js | Natural Language JavaScript (Gemini 3.1)</title>
+</head>
+<body>
+    <div>copyright 2026 brendan carell</div>
+<p>
+<script>
+(function() {
+    // 1. INJECT STYLES
+    const style = document.createElement('style');
+    style.textContent = `
+        body { font-family: 'Segoe UI', system-ui, sans-serif; background: #eef2f7; display: flex; justify-content: center; padding: 40px; }
+        .container { background: white; padding: 30px; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.08); width: 100%; max-width: 500px; }
+        h2 { margin-top: 0; color: #001f3f; font-size: 1.6rem; letter-spacing: -0.02em; }
+        .section { margin-bottom: 24px; padding-bottom: 24px; border-bottom: 1px solid #f0f0f0; }
+        label { display: block; margin-bottom: 10px; font-weight: 600; font-size: 0.85rem; color: #555; text-transform: uppercase; }
+        input, textarea { width: 100%; padding: 14px; margin-bottom: 12px; border: 1px solid #d1d9e0; border-radius: 8px; box-sizing: border-box; font-size: 1rem; transition: border-color 0.2s; }
+        input:focus, textarea:focus { outline: none; border-color: #1a73e8; box-shadow: 0 0 0 3px rgba(26,115,232,0.1); }
+        button { width: 100%; padding: 14px; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 1rem; transition: transform 0.1s, filter 0.2s; }
+        button:active { transform: scale(0.98); }
+        .btn-lock { background: #001f3f; color: white; }
+        .btn-gen { background: #1a73e8; color: white; margin-top: 8px; }
+        #output { display: none; margin-top: 25px; padding: 20px; background: #fff9e6; border: 1px solid #ffe58f; border-radius: 12px; }
+        .bookmarklet { display: inline-block; margin-top: 15px; padding: 12px 20px; background: #202124; color: white; text-decoration: none; border-radius: 30px; font-size: 0.9rem; font-weight: 500; }
+        code { display: block; background: rgba(0,0,0,0.05); padding: 12px; margin: 12px 0; font-size: 0.8rem; border-radius: 6px; word-break: break-all; color: #c7254e; }
+    `;
+    document.head.appendChild(style);
+
+    // 2. LOAD CRYPTO-JS
+    const script = document.createElement('script');
+    script.src = "https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js";
+    document.head.appendChild(script);
+
+    // 3. GENERATE DOM
+    const app = document.createElement('div');
+    app.className = 'container';
+    app.innerHTML = `
+        <h2>nl.js Builder <small style="font-size: 0.8rem; color: #1a73e8;">Gemini Flash</small></h2>
+        
+        <div class="section">
+            <label>1. Hardware-Simulated Vault</label>
+            <input type="password" id="apiKey" placeholder="Gemini API Key">
+            <input type="password" id="masterPass" placeholder="Master Access Code">
+            <button class="btn-lock" id="lockBtn">Seal API Key</button>
+        </div>
+
+        <div class="section">
+            <label>2. NLP to Bookmarklet</label>
+            <textarea id="nlpInput" placeholder="What should the tool do? (e.g., 'Extract all emails from this page and log them')"></textarea>
+            <input type="password" id="unlockPass" placeholder="Confirm Access Code">
+            <button class="btn-gen" id="genBtn">Generate JS Code</button>
+        </div>
+
+        <div id="output">
+            <strong>Script Encapsulated:</strong>
+            <code id="displayCode"></code>
+            <a href="#" class="bookmarklet" id="dragLink">Drag to Bookmark Bar</a>
+        </div>
+    `;
+    document.body.appendChild(app);
+
+    // 4. FUNCTIONALITY
+    script.onload = () => {
+        const lockBtn = document.getElementById('lockBtn');
+        const genBtn = document.getElementById('genBtn');
+
+        lockBtn.onclick = () => {
+            const key = document.getElementById('apiKey').value;
+            const pass = document.getElementById('masterPass').value;
+            if(!key || !pass) return alert("Required fields missing.");
+
+            const ciphered = CryptoJS.AES.encrypt(key, pass).toString();
+            localStorage.setItem('nljs_vault', ciphered);
+            alert("Key secured. Plaintext purged from form.");
+            document.getElementById('apiKey').value = "";
+        };
+
+        genBtn.onclick = async () => {
+            const encrypted = localStorage.getItem('nljs_vault');
+            const pass = document.getElementById('unlockPass').value;
+            const promptText = document.getElementById('nlpInput').value;
+
+            if(!encrypted || !pass || !promptText) return alert("Missing secure token or prompt.");
+
+            try {
+                const bytes = CryptoJS.AES.decrypt(encrypted, pass);
+                const originalKey = bytes.toString(CryptoJS.enc.Utf8);
+                if(!originalKey) throw new Error("Incorrect Access Code");
+
+                genBtn.innerText = "Processing in Memory...";
+                genBtn.disabled = true;
+
+                // USING GEMINI 3.1 FLASH PREVIEW
+                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${originalKey}`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        contents: [{
+                            parts: [{ text: `Task: Create a single-line JavaScript snippet for a browser bookmarklet. 
+                            Request: "${promptText}". 
+                            Constraint: Output ONLY the raw JS code. No markdown, no backticks, no comments.` }]
+                        }]
+                    })
+                });
+
+                const data = await response.json();
+                if (data.error) throw new Error(data.error.message);
+
+                let jsResult = data.candidates[0].content.parts[0].text.trim();
+                
+                // Scrub any AI markdown leftovers
+                jsResult = jsResult.replace(/```javascript|```js|```/g, "").trim();
+
+                // 2026 standard IIFE wrap
+                const finalBookmarklet = `javascript:(function(){${jsResult}})();`;
+                
+                document.getElementById('displayCode').innerText = finalBookmarklet;
+                document.getElementById('dragLink').href = finalBookmarklet;
+                document.getElementById('output').style.display = 'block';
+
+            } catch (e) {
+                alert("Security Error: " + e.message);
+            } finally {
+                genBtn.innerText = "Generate 3.1 Flash Code";
+                genBtn.disabled = false;
+            }
+        };
+    };
+})();
+</script>
+</p>
+</body>
+</html>

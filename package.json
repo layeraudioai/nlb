@@ -4,34 +4,130 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite --port=3000 --host=0.0.0.0",
+    "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview",
-    "clean": "rm -rf dist server.js",
-    "lint": "tsc --noEmit"
+    "build:aio": "vite build --base ./ && cd scripts && python inline.py",
+    "build:exe": "electron-vite build && electron-builder",
+    "preview": "vite preview --host 0.0.0.0 --port 3000",
+    "clean": "rm -rf dist",
+    "lint": "tsc --noEmit",
+    "test": "vitest",
+    "test:ui": "vitest --ui",
+    "test:e2e": "playwright test",
+    "start": "electron-forge start",
+    "package": "electron-forge package",
+    "make": "electron-forge make"
   },
   "dependencies": {
-    "@google/genai": "^1.29.0",
+    "@breezystack/lamejs": "^1.2.7",
+    "@google/genai": "^2.23.0",
     "@tailwindcss/vite": "^4.1.14",
-    "@types/crypto-js": "^4.2.2",
+    "@tonejs/midi": "^2.0.28",
     "@vitejs/plugin-react": "^5.0.4",
+    "canvas-confetti": "^1.9.4",
     "crypto-js": "^4.2.0",
     "dotenv": "^17.2.3",
-    "express": "^4.21.2",
+    "electron-compile": "^6.4.4",
+    "electron-squirrel-startup": "^1.0.1",
+    "electron-vite": "^5.0.0",
+    "esbuild": "^0.28.2",
+    "express": "^5.2.1",
+    "gyp": "^0.3.0",
+    "install": "^0.13.0",
+    "jest": "^30.5.1",
+    "jsx": "^0.9.89",
+    "jszip": "^3.10.1",
+    "kataw": "^0.0.81",
+    "lamejs": "^1.2.1",
     "lucide-react": "^0.546.0",
+    "mespeak": "^2.0.2",
+    "minimist": "^1.2.8",
+    "mocha": "^12.0.0",
     "motion": "^12.23.24",
+    "node-gyp": "^13.0.2",
+    "optimist": "^0.5.2",
+    "postinstall": "^0.11.2",
+    "qs": "^6.16.0",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
-    "vite": "^6.2.3"
+    "spessasynth_core": "^4.3.22",
+    "three": "^0.186.0"
   },
   "devDependencies": {
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.3",
     "@types/express": "^4.17.21",
+    "@types/jsdom": "^30.0.0",
     "@types/node": "^22.14.0",
+    "@vitest/coverage-v8": "^5.0.0",
     "autoprefixer": "^10.4.21",
-    "esbuild": "^0.25.0",
+    "babel-plugin-transform-async-to-generator": "^6.24.1",
+    "babel-preset-env": "^1.7.0",
+    "babel-preset-react": "^6.24.1",
+    "electron-forge": "^5.2.4",
+    "electron-prebuilt-compile": "8.2.0",
+    "electron-vite": "^5.0.0",
+    "esbuild": "^0.28.2",
+    "jsdom": "^30.0.1",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",
-    "vite": "^6.2.3"
+    "vite": "^6.4.3",
+    "vitest": "^5.0.0"
+  },
+  "allowScripts": {
+    "@parcel/watcher@2.6.0": true,
+    "unrs-resolver@1.12.2": true,
+    "esbuild@0.25.12": true,
+    "esbuild@0.28.2": true
+  },
+  "build": {
+    "appId": "com.66ghz.hypertextmusicland",
+    "productName": "HYPERTEXTMUSICLAND",
+    "files": [
+      "dist/index.html",
+      "dist/icon.png",
+      "dist/**/*"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "dist/icon.png"
+    },
+    "directories": {
+      "output": "release",
+      "buildResources": "assets"
+    }
+  },
+  "config": {
+    "forge": {
+      "make_targets": {
+        "win32": [
+          "squirrel"
+        ],
+        "darwin": [
+          "zip"
+        ],
+        "linux": [
+          "deb",
+          "rpm"
+        ]
+      },
+      "electronPackagerConfig": {
+        "packageManager": "npm"
+      },
+      "electronWinstallerConfig": {
+        "name": "react_example"
+      },
+      "electronInstallerDebian": {},
+      "electronInstallerRedhat": {},
+      "github_repository": {
+        "owner": "",
+        "name": ""
+      },
+      "windowsStoreConfig": {
+        "packageName": "",
+        "name": "reactexample"
+      }
+    }
   }
 }

@@ -13,6 +13,7 @@ import {
   sealApiKeyInVault,
   decryptApiKeyFromVault,
   purgeVault,
+  purgeKeyLogs,
   autoGenerateApiKey,
   ensureKeyProvisioned,
   getKeyLogs,
@@ -43,76 +44,48 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [isRunnerOpen, setIsRunnerOpen] = useState(false);
 
-  // Initialize state on mount
+  // The PHP OAuth session is authoritative. Local storage is only used for the
+  // encrypted vault and display cache after the server confirms the account.
   useEffect(() => {
-    const storedUser = getStoredGoogleUser();
-    const hasVault = isVaultConfigured();
-    const logs = getKeyLogs();
-    setKeyLogs(logs);
+    const initialize = async () => {
+      const sessionResponse = await fetch('/api/google/session.php', { credentials: 'same-origin' });
+      const session = await sessionResponse.json();
+      const storedUser = getStoredGoogleUser();
+      const hasVault = isVaultConfigured();
+      const logs = getKeyLogs();
+      setKeyLogs(logs);
 
-    if (storedUser) {
-      setGoogleUser(storedUser);
-
-      // Rule: If Google account is logged in AND no API key is present in vault, auto-generate one!
-      if (!hasVault) {
-        const { apiKey, entry } = autoGenerateApiKey(storedUser, 'initial_auto_gen');
-        setIsVaultLocked(true);
-        setActiveKeyMasked(entry.keyMasked);
-        setKeySource('google_tether');
-        setKeyLogs(getKeyLogs());
-        setRotationNotification(`Auto-generated initial Gemini API key linked to ${storedUser.email}`);
+      if (session.authenticated && session.user) {
+        const user = { ...session.user, tetheredAt: storedUser?.tetheredAt || Date.now() };
+        saveStoredGoogleUser(user);
+        setGoogleUser(user);
       } else {
-        setIsVaultLocked(true);
-        // Attempt decrypt with derived pass
-        const derived = getDerivedMasterPass(storedUser);
-        const data = decryptApiKeyFromVault(derived);
-        if (data) {
-          setActiveKeyMasked(maskApiKey(data.apiKey));
-          setKeySource(data.source);
-        } else if (logs.length > 0) {
-          setActiveKeyMasked(logs[0].keyMasked);
-        }
+        saveStoredGoogleUser(null);
+        setGoogleUser(null);
       }
-    } else {
+
       setIsVaultLocked(hasVault);
       if (hasVault && logs.length > 0) {
         setActiveKeyMasked(logs[0].keyMasked);
       }
-    }
-  }, []);
+    };
 
-  // Handle Google Tether Login
-  const handleTether = (user: GoogleUser) => {
-    saveStoredGoogleUser(user);
-    setGoogleUser(user);
-    setError(null);
-
-    // Rule: When Google account is logged in, if no API key is present, auto-generate one!
-    if (!isVaultConfigured()) {
-      const { apiKey, entry } = autoGenerateApiKey(user, 'initial_auto_gen');
-      setIsVaultLocked(true);
-      setActiveKeyMasked(entry.keyMasked);
-      setKeySource('google_tether');
+    void initialize().catch(() => {
+      saveStoredGoogleUser(null);
+      setGoogleUser(null);
+      setIsVaultLocked(isVaultConfigured());
       setKeyLogs(getKeyLogs());
-      setRotationNotification(`Google account tethered. Auto-generated new Gemini API key (${entry.keyMasked})`);
-    } else {
-      // Re-encrypt/associate vault with Google account session
-      const existingLogs = getKeyLogs();
-      if (existingLogs.length > 0) {
-        setActiveKeyMasked(existingLogs[0].keyMasked);
-      }
-      setRotationNotification(`Google account ${user.email} tethered successfully.`);
-    }
-  };
+    });
+  }, []);
 
   // Handle Disconnect
   const handleUntether = () => {
+    void fetch('/api/google/logout.php', { method: 'POST' }).catch(() => undefined);
     saveStoredGoogleUser(null);
     setGoogleUser(null);
     setRotationNotification(null);
   };
 
-  // Manual trigger to Auto-Generate a new key
   const handleManualGenerateKey = () => {
     if (!googleUser) {
       setError('Please tether a Google Account first to auto-generate an API key.');
@@ -120,7 +93,6 @@ export default function App() {
     }
     setIsGeneratingKey(true);
     setError(null);
-
     try {
       const { entry } = autoGenerateApiKey(googleUser, 'manual_generate');
       setIsVaultLocked(true);
@@ -128,8 +100,8 @@ export default function App() {
       setKeySource('google_tether');
       setKeyLogs(getKeyLogs());
       setRotationNotification(`Generated fresh Gemini API key: ${entry.keyMasked}`);
-    } catch (err: any) {
-      setError(err.message || 'Failed to auto-generate key');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to auto-generate key');
     } finally {
       setIsGeneratingKey(false);
     }
@@ -148,11 +120,13 @@ export default function App() {
   // Handle Vault Purge
   const handlePurgeVault = () => {
     purgeVault();
+    purgeKeyLogs();
     setIsVaultLocked(false);
     setActiveKeyMasked('');
     setOutputCode('');
     setError(null);
     setRotationNotification('Vault purged. API key removed from storage.');
+    setKeyLogs([]);
   };
 
   // Handle Code Generation
@@ -167,7 +141,6 @@ export default function App() {
 
     let activeKey = '';
 
-    // If Google user is logged in and no key is configured, auto-generate immediately!
     if (!isVaultConfigured()) {
       if (googleUser) {
         const { apiKey, entry } = autoGenerateApiKey(googleUser, 'initial_auto_gen');
@@ -177,8 +150,7 @@ export default function App() {
         setKeyLogs(getKeyLogs());
         setRotationNotification(`No API key was present. Auto-generated fresh key (${entry.keyMasked}) from Google Account.`);
       } else {
-        setError('No API key present in vault. Tether your Google Account to auto-generate a key, or seal a key in Section 1.');
-        return;
+        setRotationNotification('Using the secure guest Gemini service.');
       }
     } else {
       // Vault is configured; get the decrypted key
@@ -204,7 +176,6 @@ export default function App() {
           setError('Please provide the Master Access Code to decrypt your vault.');
           return;
         } else {
-          // If Google user is logged in but derived pass couldn't decrypt old manual key, auto-generate a new one!
           const { apiKey, entry } = autoGenerateApiKey(googleUser, 'initial_auto_gen');
           activeKey = apiKey;
           setIsVaultLocked(true);
@@ -299,7 +270,6 @@ export default function App() {
         {/* Section 0: Google Tethering */}
         <GoogleTetherCard
           user={googleUser}
-          onTether={handleTether}
           onUntether={handleUntether}
           onManualGenerateKey={handleManualGenerateKey}
           isGeneratingKey={isGeneratingKey}

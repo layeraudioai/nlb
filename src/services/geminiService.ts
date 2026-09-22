@@ -1295,22 +1295,33 @@ ${formatInstruction}
 4. Ensure the output is complete, functional, and self-contained.`;
 
   try {
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${currentKey}`,
-      {
+    const requestBody = {
+      contents: [{ parts: [{ text: systemPrompt }] }],
+      generationConfig: {
+        temperature: 0.2,
+        maxOutputTokens: 2500,
+      },
+    };
+    const response = currentKey
+      ? await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${encodeURIComponent(currentKey)}`,
+        {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: systemPrompt }] }],
-          generationConfig: {
-            temperature: 0.2,
-            maxOutputTokens: 2500,
-          },
-        }),
-      }
-    );
+          body: JSON.stringify(requestBody),
+        }
+      )
+      : await fetch(import.meta.env.VITE_GEMINI_PROXY_URL || '/api/generate.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: systemPrompt }),
+      });
 
     const data = await response.json();
+
+    if (!response.ok && !data?.error) {
+      throw new Error(`Gemini request failed with HTTP ${response.status}.`);
+    }
 
     // Check for Quota or Rate Limit errors (HTTP 429, RESOURCE_EXHAUSTED, or quota error in body)
     const isQuotaExhausted =
@@ -1330,7 +1341,7 @@ ${formatInstruction}
 
         // Retry with newly generated key
         const retryResponse = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${currentKey}`,
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${encodeURIComponent(currentKey)}`,
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -1345,18 +1356,13 @@ ${formatInstruction}
         );
 
         const retryData = await retryResponse.json();
-        if (retryData.error) {
-          console.warn('Retry returned error, using dialect generator fallback', retryData.error);
-          return {
-            code: generateOfflineFallback(prompt, dialect),
-            rotated: true,
-            newKeyMasked,
-            rotationReason: 'Quota exhausted. Auto-provisioned fresh key & synthesized routine.',
-            usedKeyMasked: newKeyMasked || 'Active Key',
-          };
+        if (!retryResponse.ok || retryData.error) {
+          throw new Error(retryData.error?.message || `Gemini retry failed with HTTP ${retryResponse.status}.`);
         }
-
         let rawCode = retryData.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        if (!rawCode.trim()) {
+          throw new Error('Gemini returned no generated code after key rotation.');
+        }
         rawCode = formatDialectOutput(scrubMarkdown(rawCode), dialect);
         return {
           code: rawCode,
@@ -1366,7 +1372,7 @@ ${formatInstruction}
           usedKeyMasked: newKeyMasked || 'Active Key',
         };
       } else {
-        throw new Error('API Request quota exhausted (HTTP 429). Tether a Google Account to auto-generate fresh keys on quota limits.');
+        throw new Error('Gemini request quota is exhausted (HTTP 429). Configure another Gemini API key or try again later.');
       }
     }
 
@@ -1374,13 +1380,9 @@ ${formatInstruction}
       if (user && /API_KEY_INVALID|key not valid|PERMISSION_DENIED/i.test(data.error.message || '')) {
         onAutoRotateAlert?.('Invalid API key detected. Auto-generating fresh key from tethered Google Account...');
         const rotation = autoGenerateApiKey(user, 'quota_exhausted_auto_rotate');
-        return {
-          code: generateOfflineFallback(prompt, dialect),
-          rotated: true,
-          newKeyMasked: rotation.entry.keyMasked,
-          rotationReason: 'Invalid key purged. Auto-generated fresh key.',
-          usedKeyMasked: rotation.entry.keyMasked,
-        };
+        throw new Error(
+          `Gemini rejected the active key. A replacement key was provisioned (${rotation.entry.keyMasked}), but the request must be retried explicitly.`
+        );
       }
       throw new Error(data.error.message || 'Error communicating with Gemini API');
     }
@@ -1389,10 +1391,9 @@ ${formatInstruction}
     code = scrubMarkdown(code);
 
     if (!code) {
-      code = generateOfflineFallback(prompt, dialect);
-    } else {
-      code = formatDialectOutput(code, dialect);
+      throw new Error('Gemini returned no generated code.');
     }
+    code = formatDialectOutput(code, dialect);
 
     return {
       code,
@@ -1401,15 +1402,6 @@ ${formatInstruction}
       usedKeyMasked: newKeyMasked || (currentKey.slice(0, 6) + '...' + currentKey.slice(-4)),
     };
   } catch (err: any) {
-    if (user && (err.message?.includes('429') || err.message?.includes('quota') || didRotate)) {
-      return {
-        code: generateOfflineFallback(prompt, dialect),
-        rotated: true,
-        newKeyMasked,
-        rotationReason: 'Auto-rotated key successfully following usage limit.',
-        usedKeyMasked: newKeyMasked || 'Active Key',
-      };
-    }
     throw err;
   }
 }
@@ -1417,8 +1409,9 @@ ${formatInstruction}
 function formatDialectOutput(codeStr: string, dialect: BasicDialect): string {
   if (dialect === 'bookmarklet') {
     let clean = codeStr.replace(/^(javascript:)+/i, '').trim();
-    if (clean.startsWith('(function') || clean.startsWith('function')) {
-      return `javascript:${clean}`;
+    if (clean.startsWith('```')) clean = scrubMarkdown(clean);
+    if (/^\(function\b[\s\S]*\)\(\);?$/.test(clean)) {
+      return `javascript:${clean.replace(/;$/, '')};`;
     }
     return `javascript:(function(){${clean}})();`;
   }

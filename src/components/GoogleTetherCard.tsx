@@ -1,11 +1,9 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { GoogleUser } from '../types';
-import { ShieldCheck, LogOut, RefreshCw, Key, Sparkles, CheckCircle2, ChevronDown } from 'lucide-react';
-import { motion } from 'motion/react';
+import { ShieldCheck, LogOut, RefreshCw, Sparkles, CheckCircle2 } from 'lucide-react';
 
 interface GoogleTetherCardProps {
   user: GoogleUser | null;
-  onTether: (userData: GoogleUser) => void;
   onUntether: () => void;
   onManualGenerateKey: () => void;
   isGeneratingKey?: boolean;
@@ -13,26 +11,25 @@ interface GoogleTetherCardProps {
 
 export const GoogleTetherCard: React.FC<GoogleTetherCardProps> = ({
   user,
-  onTether,
   onUntether,
   onManualGenerateKey,
   isGeneratingKey = false,
 }) => {
-  const [showLoginModal, setShowLoginModal] = useState(false);
-  const [customEmail, setCustomEmail] = useState('murderlandsgame@gmail.com');
-  const [customName, setCustomName] = useState('Murderlands Game');
+  const [accountKeys, setAccountKeys] = useState<Array<{ name: string; displayName: string; keyString: string | null }>>([]);
+  const [newKeyName, setNewKeyName] = useState('nlbasic key');
+  const [keyError, setKeyError] = useState<string | null>(null);
 
-  const handleQuickLogin = (email: string, name: string) => {
-    const newUser: GoogleUser = {
-      id: `google_${Date.now()}`,
-      name,
-      email,
-      avatarUrl: `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(name)}&backgroundColor=0284c7`,
-      tetheredAt: Date.now(),
-    };
-    onTether(newUser);
-    setShowLoginModal(false);
-  };
+  useEffect(() => {
+    if (!user) return;
+    setKeyError(null);
+    void fetch('/api/google/keys.php', { credentials: 'same-origin' })
+      .then((response) => response.json())
+      .then((data) => {
+        if (!data.keys) throw new Error(data.error || 'Unable to load Google API keys.');
+        setAccountKeys(data.keys);
+      })
+      .catch((error) => setKeyError(error instanceof Error ? error.message : 'Unable to load Google API keys.'));
+  }, [user]);
 
   return (
     <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm relative overflow-hidden">
@@ -74,13 +71,13 @@ export const GoogleTetherCard: React.FC<GoogleTetherCardProps> = ({
       {!user ? (
         <div className="space-y-4">
           <p className="text-sm text-slate-600 leading-relaxed">
-            Connect your Google Account to enable <strong>automatic Gemini API key provisioning</strong>. When no key is
-            detected or request limits (HTTP 429 quota exhaustion) are hit, a fresh API key is auto-generated seamlessly.
+            Connect your Google Account to associate the session with this builder. API keys remain managed by the
+            encrypted vault and are never created by the browser.
           </p>
 
           <div className="flex flex-col sm:flex-row gap-3 pt-2">
-            <button
-              onClick={() => handleQuickLogin('murderlandsgame@gmail.com', 'Murderlands Game')}
+            <a
+              href="/api/google/login.php"
               className="flex-1 h-12 bg-white hover:bg-slate-50 border border-slate-300 rounded-xl px-4 font-semibold text-sm text-slate-700 flex items-center justify-center gap-3 transition-colors shadow-xs"
             >
               <svg width="20" height="20" viewBox="0 0 24 24">
@@ -102,46 +99,9 @@ export const GoogleTetherCard: React.FC<GoogleTetherCardProps> = ({
                 />
               </svg>
               <span>Sign in with Google</span>
-            </button>
+            </a>
 
-            <button
-              onClick={() => setShowLoginModal(!showLoginModal)}
-              className="h-12 px-4 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium text-sm rounded-xl transition-colors flex items-center justify-center gap-1.5"
-            >
-              <span>Custom Account</span>
-              <ChevronDown size={16} />
-            </button>
           </div>
-
-          {showLoginModal && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3 mt-3"
-            >
-              <div className="text-xs font-semibold text-slate-600">Specify Google Account Details</div>
-              <input
-                type="email"
-                value={customEmail}
-                onChange={(e) => setCustomEmail(e.target.value)}
-                placeholder="Google Email (e.g. you@gmail.com)"
-                className="w-full h-10 bg-white border border-slate-200 rounded-lg px-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-              />
-              <input
-                type="text"
-                value={customName}
-                onChange={(e) => setCustomName(e.target.value)}
-                placeholder="Display Name"
-                className="w-full h-10 bg-white border border-slate-200 rounded-lg px-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-              />
-              <button
-                onClick={() => handleQuickLogin(customEmail, customName)}
-                className="w-full h-10 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm rounded-lg transition-colors"
-              >
-                Confirm & Tether Google Account
-              </button>
-            </motion.div>
-          )}
         </div>
       ) : (
         <div className="space-y-4">
@@ -174,7 +134,6 @@ export const GoogleTetherCard: React.FC<GoogleTetherCardProps> = ({
                 <RefreshCw size={14} className={isGeneratingKey ? 'animate-spin' : ''} />
                 <span>{isGeneratingKey ? 'Provisioning...' : 'Auto-Generate New Key'}</span>
               </button>
-
               <button
                 onClick={onUntether}
                 className="h-9 px-3 bg-white hover:bg-red-50 hover:border-red-200 text-slate-600 hover:text-red-600 border border-slate-200 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-colors"
@@ -192,6 +151,39 @@ export const GoogleTetherCard: React.FC<GoogleTetherCardProps> = ({
               <span className="font-semibold">Auto-Key Rotation Active:</span> If a request encounters a rate limit
               (HTTP 429 quota exhaustion) or if no key is sealed in the vault, the application will automatically generate
               and switch to a new Gemini API key linked to your Google Account.
+            </div>
+            <div className="border border-slate-200 rounded-xl p-4 space-y-3">
+              <div className="text-xs font-bold text-slate-600 uppercase tracking-wider">Google Cloud API Keys</div>
+              {keyError && <div className="text-xs text-red-600">{keyError}</div>}
+              {accountKeys.map((key) => (
+                <div key={key.name} className="flex items-center justify-between gap-3 text-xs bg-slate-50 rounded-lg p-2.5">
+                  <span className="font-medium text-slate-700">{key.displayName || key.name}</span>
+                  <span className="font-mono text-slate-500">{key.keyString || 'Managed by Google'}</span>
+                </div>
+              ))}
+              <div className="flex gap-2">
+                <input value={newKeyName} onChange={(event) => setNewKeyName(event.target.value)} className="flex-1 h-9 border border-slate-200 rounded-lg px-3 text-xs" />
+                <button
+                  onClick={() => {
+                    void fetch('/api/google/keys-create.php', {
+                      method: 'POST',
+                      credentials: 'same-origin',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ displayName: newKeyName }),
+                    }).then(async (response) => {
+                      const data = await response.json();
+                      if (!response.ok) throw new Error(data.error || 'Unable to create Google API key.');
+                      return fetch('/api/google/keys.php', { credentials: 'same-origin' });
+                    }).then((response) => response.json()).then((data) => {
+                      if (!data.keys) throw new Error(data.error || 'Unable to refresh Google API keys.');
+                      setAccountKeys(data.keys);
+                    }).catch((error) => setKeyError(error instanceof Error ? error.message : 'Unable to create Google API key.'));
+                  }}
+                  className="h-9 px-3 bg-blue-600 text-white rounded-lg text-xs font-semibold"
+                >
+                  Create Key
+                </button>
+              </div>
             </div>
           </div>
         </div>

@@ -64,16 +64,21 @@ export const VaultSection: React.FC<VaultSectionProps> = ({
             {googleUser ? (
               <span>
                 Your Google Account is tethered. You can either{' '}
-                <button
-                  onClick={onManualGenerateKey}
-                  className="text-blue-600 font-semibold underline underline-offset-2 hover:text-blue-800"
-                >
+                <button onClick={onManualGenerateKey} className="text-blue-600 font-semibold underline underline-offset-2 hover:text-blue-800">
                   auto-generate a new API key immediately
                 </button>
                 , or seal a custom key below:
               </span>
             ) : (
-              'Store an encrypted Gemini API key into client-side hardware-simulated memory, or tether your Google Account above for automatic provisioning.'
+              'Store an encrypted Gemini API key into client-side hardware-simulated memory, or tether your Google Account above.'
+            )}
+            {googleUser && (
+              <button
+                onClick={onManualGenerateKey}
+                className="h-11 px-4 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-xl font-semibold text-sm transition-colors"
+              >
+                Auto-Generate Key
+              </button>
             )}
           </p>
 
@@ -109,14 +114,6 @@ export const VaultSection: React.FC<VaultSectionProps> = ({
               <Lock size={15} />
               Seal API Key in Vault
             </button>
-            {googleUser && (
-              <button
-                onClick={onManualGenerateKey}
-                className="h-11 px-4 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-xl font-semibold text-sm transition-colors"
-              >
-                Auto-Generate Key
-              </button>
-            )}
           </div>
         </div>
       ) : (

@@ -36,6 +36,10 @@ function saveKeyLogs(logs: KeyLogEntry[]) {
   }
 }
 
+export function purgeKeyLogs(): void {
+  localStorage.removeItem(LOGS_STORAGE_KEY);
+}
+
 // Read Google User from storage
 export function getStoredGoogleUser(): GoogleUser | null {
   try {
@@ -90,20 +94,10 @@ export function purgeVault(): void {
   localStorage.removeItem(VAULT_STORAGE_KEY);
 }
 
-// Generate a random high-entropy token string
-function generateRandomHex(length: number): string {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
-  let result = '';
-  for (let i = 0; i < length; i++) {
-    result += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return result;
-}
-
 /**
  * Auto-generate a new Gemini API key tethered to the Google Account.
- * If the platform provides a GEMINI_API_KEY, use that as base for real calls,
- * while maintaining a distinct key generation identifier and rotation footprint.
+ * The browser can only provision a real key that was supplied by configuration.
+ * It must never fabricate a token that Google will reject.
  */
 export function autoGenerateApiKey(
   user: GoogleUser,
@@ -112,16 +106,13 @@ export function autoGenerateApiKey(
   const timestamp = Date.now();
   const rotationIndex = getKeyLogs().length + 1;
 
-  // Real or generated Gemini API Key representation
-  const envKey = process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY !== 'MY_GEMINI_API_KEY'
-    ? process.env.GEMINI_API_KEY
-    : null;
-
-  // If env key exists and it's an initial auto gen, we can use it, or create a unique project-linked key
-  const generatedKey = envKey || `AIzaSy${generateRandomHex(33)}`;
+  const configuredKey = import.meta.env.VITE_GEMINI_API_KEY?.trim();
+  if (!configuredKey || configuredKey === 'MY_GEMINI_API_KEY') {
+    throw new Error('No real Gemini API key is configured for Google tether rotation.');
+  }
 
   const derivedPass = getDerivedMasterPass(user);
-  sealApiKeyInVault(generatedKey, derivedPass, 'google_tether');
+  sealApiKeyInVault(configuredKey, derivedPass, 'google_tether');
 
   // Mark prior active keys in log as rotated
   const existingLogs = getKeyLogs();
@@ -131,7 +122,7 @@ export function autoGenerateApiKey(
 
   const entry: KeyLogEntry = {
     id: `key_${timestamp}_${rotationIndex}`,
-    keyMasked: maskApiKey(generatedKey),
+    keyMasked: maskApiKey(configuredKey),
     createdAt: timestamp,
     reason,
     usageCount: 0,
@@ -141,7 +132,7 @@ export function autoGenerateApiKey(
   updatedLogs.unshift(entry);
   saveKeyLogs(updatedLogs);
 
-  return { apiKey: generatedKey, entry };
+  return { apiKey: configuredKey, entry };
 }
 
 // Check and auto-provision key if Google user is tethered but no key is in vault
